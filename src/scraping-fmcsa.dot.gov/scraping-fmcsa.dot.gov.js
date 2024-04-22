@@ -1,4 +1,8 @@
 import puppeteer from "puppeteer";
+// TODO:
+// setup proxy rotating for puppeteer
+// setup agent rotating for puppeteer
+// make your programe more dynamic with taking inputs
 
 async function scrapeData() {
   const browser = await puppeteer.launch({ headless: false });
