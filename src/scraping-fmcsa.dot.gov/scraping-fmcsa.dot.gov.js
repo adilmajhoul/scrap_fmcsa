@@ -1,4 +1,38 @@
 import puppeteer from 'puppeteer';
+import * as cheerio from 'cheerio';
+import { writeDataToJson } from '../scraping-rei.com';
+
+import * as fs from 'fs';
+import * as Excel from 'exceljs';
+
+async function appendDataToExcelFile(data, fileName) {
+  const workbook = new Excel.Workbook();
+
+  // Check if the file exists
+  if (fs.existsSync(fileName)) {
+    // If the file exists, read it
+    await workbook.xlsx.readFile(fileName);
+    const worksheet = workbook.getWorksheet(1); // Get the first worksheet
+
+    // Add new rows to the worksheet
+    for (const row of data) {
+      worksheet.addRow(row);
+    }
+  } else {
+    // If the file doesn't exist, create a new worksheet and add the header row
+    const worksheet = workbook.addWorksheet('Sheet1');
+
+    const header = ['usdot_number', 'prefix', 'docket_number', 'legal_name', 'dba_name', 'city', 'state'];
+
+    worksheet.addRow(header);
+    for (const row of data) {
+      worksheet.addRow(row);
+    }
+  }
+
+  // Save the workbook to the file
+  await workbook.xlsx.writeFile(fileName);
+}
 
 // ***********************
 // constants
@@ -83,10 +117,9 @@ class PageProcessor {
   }
 
   async getElementHtmlBySelector(selector) {
-    const bodyHtml = await this.page.evaluate(() => document.querySelector(selector).innerHTML);
+    const bodyHtml = await this.page.evaluate((selector) => document.querySelector(selector).innerHTML, selector);
     return bodyHtml;
   }
-
   async clickNext() {
     await this.waitForSelector(NEXT_PAGE_BUTTON_SELECTOR);
     await this.clickSelector(NEXT_PAGE_BUTTON_SELECTOR);
@@ -107,24 +140,51 @@ class PageProcessor {
   }
 
   async getAllMatchingSelector(selector, html) {
-    const $ = cheerio.load(html);
+    const $ = this.createCheerioObject(html);
+
     const elementsArray = $(selector).toArray();
 
     return elementsArray;
   }
 
-  async getPageTableData(tableHtml) {
-    const $ = this.createCheerioObject(tableHtml);
+  getTableRow(row) {
+    const usdot_number = row.eq(0).text().trim();
+    const prefix = row.eq(1).text().trim();
+    const docket_number = row.eq(2).text().trim();
+    const legal_name = row.eq(3).text().trim();
+    const dba_name = row.eq(4).text().trim();
+    const city = row.eq(5).text().trim();
+    const state = row.eq(6).text().trim();
+
+    const company = {
+      usdot_number,
+      prefix,
+      docket_number,
+      legal_name,
+      dba_name,
+      city,
+      state,
+    };
+
+    return company;
+  }
+
+  async getPageTableData(html) {
+    const $ = this.createCheerioObject(html);
 
     const pageTableData = [];
 
     $('tbody tr').each((i, element) => {
       if (i === 0) return; // skip the header row
 
-      const row = $(element);
-      const company = getTableRow(row);
+      const row = $(element).find('td');
 
-      pageTableData.push(company);
+      const company = this.getTableRow(row);
+
+      // Check if USDOT_Number is valid before adding to pageTableData
+      if (company.usdot_number.match(/^\d+$/) || company.docket_number.match(/^\d+$/)) {
+        pageTableData.push(company);
+      }
     });
 
     return pageTableData;
@@ -163,73 +223,53 @@ async function scrapeData() {
   // -------------------------------------------
 
   // wait for till solving captacha manually
-  await new Promise((_func) => setTimeout(_func, 25000));
-
-  // click search
-  await clickSearch(page);
+  await new Promise((_func) => setTimeout(_func, 20000));
 
   // Create a new PageProcessor instance
   const pageProcessor = new PageProcessor(page);
+
+  // click search
+  await pageProcessor.clickSearch();
 
   // ++++++++++++++++++++++++++++++++++++++++
   // start with loop of 10 pages for testing
 
   // here we inter a pagination loop
   let i = 1;
-  while (i <= 10) {
+  while (i <= 5) {
     console.log(`scraping page: ${i} ...`);
 
     // wait for table
-    await pageProcessor.waitForSelector(TABLE_SELECTOR);
+    // await pageProcessor.waitForSelector(TABLE_SELECTOR);
+    await page.waitForSelector(TABLE_SELECTOR);
 
     // get table html
-    const tableHtml = await pageProcessor.getElementHtmlBySelector(TABLE_SELECTOR);
+    // const tableHtml = await pageProcessor.getElementHtmlBySelector(TABLE_SELECTOR);
 
-    const $ = await pageProcessor.createCheerioObject(tableHtml);
+    // body html
+    const bodyHtml = await pageProcessor.getCurrentPageBody();
+
+    // create cheerio object
+    const $ = pageProcessor.createCheerioObject(bodyHtml);
 
     // const get full page table as array of objects
-    const pageTableData = await pageProcessor.getPageTableData(tableHtml);
+    const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
 
-    // apend pageTableData to a xlsm file
+    console.log('🚀 ~ scrapeData ~ pageTableData:', pageTableData);
+
+    // apend pageTableData array to an xlsm file
+    await appendDataToExcelFile(pageTableData, 'carriers.xlsx');
+
+    // apend pageTableData array to a JSON file
+    writeDataToJson(pageTableData, 'carriers.json');
 
     console.log(`scraped page: ${i} ✅`);
 
     // go to next page
+    await pageProcessor.clickNext();
 
-    // -------------
-
-    // handle none ok response
-    // wait for table selector
-    // get table html with puppeteer
-    // and parse it using cheerio:
-    //--------- pass each row to function
-    //--------- parse each row and store it to an an array of objects
-    //--------- after finishing the table parsing store the whole array of objects to xlsm
-    //--------- set scraped page to scrapedPages++
-    // wait for next
-    // click next
-    // repeat
     i++;
   }
-  // ++++++++++++++++++++++++++++++++++++++++
-  // Wait for the next form input button
-
-  // Wait for the new data to be loaded
-  // await new Promise((_func) => setTimeout(_func, 3000));
-
-  // Get the HTML and parse it using a query selector
-  // const cellText = await page.evaluate(() => {
-  //   const element = document.querySelector(
-  //     'body > font > table:nth-child(5) > tbody > tr:nth-child(2) > td:nth-child(1) > center > font',
-  //   );
-
-  //   return element.textContent;
-  // });
-
-  // console.log(cellText);
-
-  // Cheerio
-  // Extract the data using Cheerio or any other method
 
   // Close the browser
   await browser.close();
@@ -243,32 +283,3 @@ scrapeData().catch(console.error);
 // handle keeping track of the current page scraped and the 304 pages
 
 // fucntion that get state as its argument with state type
-
-function getTableRow(row) {
-  const name = row.eq(0).text().trim();
-  const site = row.eq(1).text().trim();
-  const industry = row.eq(2).text().trim();
-  const country = row.eq(3).text().trim();
-  const fundingAmount = row.eq(4).text().trim();
-  const fundingType = row.eq(5).text().trim();
-  const fundingDate = row.eq(6).text().trim();
-
-  const company = {
-    name,
-    site,
-    industry,
-    country,
-    fundingAmount,
-    fundingType,
-    fundingDate,
-  };
-
-  return company;
-}
-// -------------
-
-// -------------
-
-// -------------
-
-// -------------
