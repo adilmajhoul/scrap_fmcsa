@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer';
 
 // ***********************
 // constants
+
 const TABLE_SELECTOR = 'body > font > table:nth-child(5)';
 const NEXT_PAGE_BUTTON_SELECTOR = 'input[type="submit"][value="Next 10 Records"]';
 const SEARCH_BUTTON_SELECTOR = 'body > font > center:nth-child(17) > form > input[type=submit]:nth-child(4)';
@@ -16,7 +17,7 @@ const SEARCH_BUTTON_SELECTOR = 'body > font > center:nth-child(17) > form > inpu
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // UTIL FUNCTIONS:
 // convert these fucntions to a class
-
+/*
 async function waitForSelector(selector) {
   await page.waitForSelector(selector);
 }
@@ -53,6 +54,81 @@ async function getAllMatchingSelector(selector, html, processEachElementCallback
   const elementsArray = elements.toArray(); // Convert the Cheerio object to an array
 
   return elementsArray;
+}
+*/
+class PageProcessor {
+  constructor(page) {
+    this.page = page;
+  }
+
+  async waitForSelector(selector) {
+    await this.page.waitForSelector(selector);
+  }
+
+  async clickSelector(selector) {
+    await this.page.click(selector);
+  }
+
+  createCheerioObject(html) {
+    return cheerio.load(html);
+  }
+
+  async getCurrentPageHtml() {
+    const html = await this.page.content();
+    return html;
+  }
+  async getCurrentPageBody() {
+    const bodyHtml = await this.page.evaluate(() => document.querySelector('body').innerHTML);
+    return bodyHtml;
+  }
+
+  async getElementHtmlBySelector(selector) {
+    const bodyHtml = await this.page.evaluate(() => document.querySelector(selector).innerHTML);
+    return bodyHtml;
+  }
+
+  async clickNext() {
+    await this.waitForSelector(NEXT_PAGE_BUTTON_SELECTOR);
+    await this.clickSelector(NEXT_PAGE_BUTTON_SELECTOR);
+  }
+
+  async clickSearch() {
+    await this.page.waitForSelector(SEARCH_BUTTON_SELECTOR);
+    await this.page.click(SEARCH_BUTTON_SELECTOR);
+  }
+
+  async processAllMatchingSelector(selector, html, processEachElementCallback) {
+    const $ = createCheerioObject(html);
+    const elementsArray = $(selector).toArray();
+
+    elementsArray.forEach((element) => {
+      processEachElementCallback(element);
+    });
+  }
+
+  async getAllMatchingSelector(selector, html) {
+    const $ = cheerio.load(html);
+    const elementsArray = $(selector).toArray();
+
+    return elementsArray;
+  }
+
+  async getPageTableData(tableHtml) {
+    const $ = this.createCheerioObject(tableHtml);
+
+    const pageTableData = [];
+
+    $('tbody tr').each((i, element) => {
+      if (i === 0) return; // skip the header row
+
+      const row = $(element);
+      const company = getTableRow(row);
+
+      pageTableData.push(company);
+    });
+
+    return pageTableData;
+  }
 }
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -91,6 +167,10 @@ async function scrapeData() {
 
   // click search
   await clickSearch(page);
+
+  // Create a new PageProcessor instance
+  const pageProcessor = new PageProcessor(page);
+
   // ++++++++++++++++++++++++++++++++++++++++
   // start with loop of 10 pages for testing
 
@@ -100,11 +180,24 @@ async function scrapeData() {
     console.log(`scraping page: ${i} ...`);
 
     // wait for table
-    await waitForSelector(TABLE_SELECTOR);
-    // get table html
-    // get all table rows
+    await pageProcessor.waitForSelector(TABLE_SELECTOR);
 
-    await processAllMatchingSelector(selector, html, processEachElementCallback);
+    // get table html
+    const tableHtml = await pageProcessor.getElementHtmlBySelector(TABLE_SELECTOR);
+
+    const $ = await pageProcessor.createCheerioObject(tableHtml);
+
+    // const get full page table as array of objects
+    const pageTableData = await pageProcessor.getPageTableData(tableHtml);
+
+    // apend pageTableData to a xlsm file
+
+    console.log(`scraped page: ${i} ✅`);
+
+    // go to next page
+
+    // -------------
+
     // handle none ok response
     // wait for table selector
     // get table html with puppeteer
@@ -116,25 +209,24 @@ async function scrapeData() {
     // wait for next
     // click next
     // repeat
-    console.log(`scraped page: ${i} ✅`);
     i++;
   }
   // ++++++++++++++++++++++++++++++++++++++++
   // Wait for the next form input button
 
   // Wait for the new data to be loaded
-  await new Promise((_func) => setTimeout(_func, 3000));
+  // await new Promise((_func) => setTimeout(_func, 3000));
 
   // Get the HTML and parse it using a query selector
-  const cellText = await page.evaluate(() => {
-    const element = document.querySelector(
-      'body > font > table:nth-child(5) > tbody > tr:nth-child(2) > td:nth-child(1) > center > font',
-    );
+  // const cellText = await page.evaluate(() => {
+  //   const element = document.querySelector(
+  //     'body > font > table:nth-child(5) > tbody > tr:nth-child(2) > td:nth-child(1) > center > font',
+  //   );
 
-    return element.textContent;
-  });
+  //   return element.textContent;
+  // });
 
-  console.log(cellText);
+  // console.log(cellText);
 
   // Cheerio
   // Extract the data using Cheerio or any other method
