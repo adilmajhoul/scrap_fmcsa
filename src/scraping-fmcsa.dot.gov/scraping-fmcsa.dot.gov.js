@@ -1,9 +1,11 @@
-import puppeteer from 'puppeteer';
+import puppeteer, { InterceptResolutionAction } from 'puppeteer';
 import * as cheerio from 'cheerio';
 import { writeDataToJson } from '../scraping-rei.com';
 
 import * as fs from 'fs';
 import * as Excel from 'exceljs';
+import proxies from '../lib/config/proxies';
+import useProxy from '@lem0-packages/puppeteer-page-proxy';
 
 async function appendDataToExcelFile(data, fileName) {
   const workbook = new Excel.Workbook();
@@ -106,6 +108,7 @@ async function getAllMatchingSelector(selector, html, processEachElementCallback
   return elementsArray;
 }
 */
+
 class PageProcessor {
   constructor(page) {
     this.page = page;
@@ -206,6 +209,11 @@ class PageProcessor {
     return pageTableData;
   }
 }
+
+function getRandomProxy(proxies) {
+  const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
+  return randomProxy;
+}
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 async function scrapeData() {
@@ -252,7 +260,7 @@ async function scrapeData() {
 
   // here we inter a pagination loop
   let i = 1;
-  while (i <= 5) {
+  while (i <= 1) {
     console.log(`scraping page: ${i} ...`);
 
     // wait for table

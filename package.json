@@ -16,13 +16,19 @@
   },
   "type": "module",
   "dependencies": {
+    "@lem0-packages/puppeteer-page-proxy": "^1.3.3",
+    "@stableproxy/puppeteer-page-proxy": "^2.3.2",
     "axios": "^1.6.8",
     "cheerio": "^1.0.0-rc.12",
     "commander": "^12.0.0",
+    "exceljs": "^4.4.0",
     "fs": "^0.0.1-security",
+    "https-proxy-agent": "^7.0.4",
+    "node-fetch": "^3.3.2",
     "path": "^0.12.7",
     "puppeteer": "^22.6.3",
     "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-proxy": "^1.0.2",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "yargs": "^17.7.2"
   }

@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { proxies } from './lib/config/proxies';
+import proxies from './lib/config/proxies.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -150,10 +150,7 @@ async function paginationLoop(url, baseUrl) {
   url = baseUrl + url;
 
   while (true) {
-    const { html, nextPageUrl } = await getPage(
-      url,
-      "a[data-id='pagination-test-link-next']",
-    );
+    const { html, nextPageUrl } = await getPage(url, "a[data-id='pagination-test-link-next']");
 
     let productLinks = await parseLinks(html, 'div#search-results > ul li > a');
 
