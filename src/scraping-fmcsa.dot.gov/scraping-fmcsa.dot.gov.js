@@ -16,7 +16,15 @@ async function appendDataToExcelFile(data, fileName) {
 
     // Add new rows to the worksheet
     for (const row of data) {
-      worksheet.addRow(row);
+      worksheet.addRow([
+        row.usdot_number,
+        row.prefix,
+        row.docket_number,
+        row.legal_name,
+        row.dba_name,
+        row.city,
+        row.state,
+      ]);
     }
   } else {
     // If the file doesn't exist, create a new worksheet and add the header row
@@ -26,7 +34,15 @@ async function appendDataToExcelFile(data, fileName) {
 
     worksheet.addRow(header);
     for (const row of data) {
-      worksheet.addRow(row);
+      worksheet.addRow([
+        row.usdot_number,
+        row.prefix,
+        row.docket_number,
+        row.legal_name,
+        row.dba_name,
+        row.city,
+        row.state,
+      ]);
     }
   }
 
