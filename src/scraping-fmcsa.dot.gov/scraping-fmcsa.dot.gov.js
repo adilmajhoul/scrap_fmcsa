@@ -7,6 +7,8 @@ import * as Excel from 'exceljs';
 import proxies from '../lib/config/proxies';
 import useProxy from '@lem0-packages/puppeteer-page-proxy';
 import { promisify } from 'util';
+import path from 'path';
+import readline from 'readline';
 
 // promisify callback functions
 const readFileAsync = promisify(fs.readFile);
@@ -232,15 +234,16 @@ class PageProcessor {
   }
 
   async getLastLine(file) {
-    try {
-      const data = await readFileAsync(file, 'utf8');
+    let lastLine;
 
-      const lines = data.split('\n');
+    const stream = fs.createReadStream(file);
+    const rl = readline.createInterface({ input: stream });
 
-      return lines[lines.length - 1];
-    } catch (err) {
-      console.error(`Error reading file ${file} | Error: ${err.message}`);
+    for await (const line of rl) {
+      lastLine = line;
     }
+
+    return parseInt(lastLine);
   }
 
   async writeScrapedPagesToFile(page, file) {
@@ -283,7 +286,9 @@ class PageProcessor {
       try {
         return await asyncFunc();
       } catch (error) {
-        console.error(`Error: ${error.message}. Retrying in ${retryInSeconds} seconds...`);
+        console.error(`Error: ${error.message}. Reloading page and retrying in ${retryInSeconds} seconds...`);
+        await this.page.reload({ waitUntil: 'load' }); // Reload the page
+
         await new Promise((resolve) => setTimeout(resolve, retryInSeconds));
       }
     }
@@ -313,7 +318,7 @@ async function scrapeData() {
   await pageProcessor.retry(
     async () => {
       await page.goto('https://li-public.fmcsa.dot.gov/LIVIEW/pkg_carrquery.prc_carrlist', {
-        waitUntil: 'networkidle0',
+        waitUntil: 'load',
       });
     },
     5,
@@ -352,10 +357,11 @@ async function scrapeData() {
   // ++++++++++++++++++++++++++++++++++++++++
   // start with loop of 10 pages for testing
 
-  const START_FROM_PAGE = 0;
+  const START_FROM_PAGE = await pageProcessor.getLastLine('leftAt_testingRetry.txt');
+  console.log('🚀 ~ scrapeData ~ START_FROM_PAGE:', START_FROM_PAGE);
   // here we inter a pagination loop
   let i = 1;
-  while (i <= 5) {
+  while (i <= 10) {
     if (i > START_FROM_PAGE) {
       // ==== write a fuction that get last number in leftAt file retirve that left at page to now set it manually everytime
       // wait for table
