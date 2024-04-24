@@ -9,7 +9,7 @@ import useProxy from '@lem0-packages/puppeteer-page-proxy';
 import { promisify } from 'util';
 
 // promisify callback functions
-const readFileAsync = util.promisify(fs.readFile);
+const readFileAsync = promisify(fs.readFile);
 
 async function appendDataToExcelFile(data, fileName) {
   const workbook = new Excel.Workbook();
@@ -244,7 +244,7 @@ class PageProcessor {
   }
 
   async writeScrapedPagesToFile(page, file) {
-    const appendFileAsync = util.promisify(fs.appendFile);
+    const appendFileAsync = promisify(fs.appendFile);
 
     // check if lines length >= 6 remove first 3 lines
     if ((await this.countLinesOfFile(file)) >= 6) {
@@ -261,7 +261,7 @@ class PageProcessor {
   }
 
   async removeFirstThreeLines(file) {
-    const writeFileAsync = util.promisify(fs.writeFile);
+    const writeFileAsync = promisify(fs.writeFile);
 
     try {
       const data = await readFileAsync(file, 'utf8');
@@ -298,16 +298,29 @@ function getRandomProxy(proxies) {
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 async function scrapeData() {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({ headless: false, executablePath: '/usr/bin/google-chrome-stable' });
   const page = await browser.newPage();
 
+  // Create a new PageProcessor instance
+  const pageProcessor = new PageProcessor(page);
+
   // Navigate to the page
+  // await page.goto('https://li-public.fmcsa.dot.gov/LIVIEW/pkg_carrquery.prc_carrlist', {
+  // waitUntil: 'networkidle0',
+  // });
 
-  await page.goto('https://li-public.fmcsa.dot.gov/LIVIEW/pkg_carrquery.prc_carrlist', {
-    waitUntil: 'networkidle0',
-  });
+  // Navigate to the page using retry
+  await pageProcessor.retry(
+    async () => {
+      await page.goto('https://li-public.fmcsa.dot.gov/LIVIEW/pkg_carrquery.prc_carrlist', {
+        waitUntil: 'networkidle0',
+      });
+    },
+    5,
+    10,
+  );
 
-  // select new jersey
+  // select new jersey TODO: fix this mess
   // -------------------------------------------
   // Select the dropdown element
   const dropdown = await page.$('#state');
@@ -330,50 +343,60 @@ async function scrapeData() {
   // wait for till solving captacha manually
   await new Promise((_func) => setTimeout(_func, 20000));
 
-  // Create a new PageProcessor instance
-  const pageProcessor = new PageProcessor(page);
-
   // click search
-  await pageProcessor.clickSearch();
+  // await pageProcessor.clickSearch();
+
+  // Click search using retry
+  await pageProcessor.retry(async () => await pageProcessor.clickSearch(), 5, 10);
 
   // ++++++++++++++++++++++++++++++++++++++++
   // start with loop of 10 pages for testing
 
-  const START_FROM_PAGE = 2301;
+  const START_FROM_PAGE = 0;
   // here we inter a pagination loop
   let i = 1;
-  while (i <= 5000) {
+  while (i <= 5) {
     if (i > START_FROM_PAGE) {
       // ==== write a fuction that get last number in leftAt file retirve that left at page to now set it manually everytime
       // wait for table
       // await pageProcessor.waitForSelector(TABLE_SELECTOR);
-      await page.waitForSelector(TABLE_SELECTOR);
+      // await page.waitForSelector(TABLE_SELECTOR);
+      // Wait for table using retry
+      await pageProcessor.retry(async () => await page.waitForSelector(TABLE_SELECTOR), 5, 10);
 
       // get table html
       // const tableHtml = await pageProcessor.getElementHtmlBySelector(TABLE_SELECTOR);
 
       // body html
-      const bodyHtml = await pageProcessor.getCurrentPageBody();
+      // TODO: optimize this
+      // const bodyHtml = await pageProcessor.getCurrentPageBody();
+      const bodyHtml = await pageProcessor.retry(async () => await pageProcessor.getCurrentPageBody(), 5, 10);
 
       // create cheerio object
       const $ = pageProcessor.createCheerioObject(bodyHtml);
 
       // const get full page table as array of objects
-      const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
+      // const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
+      const pageTableData = await pageProcessor.retry(
+        async () => await pageProcessor.getPageTableData(bodyHtml),
+        5,
+        10,
+      );
 
       // apend pageTableData array to an xlsm file
-      await appendDataToExcelFile(pageTableData, '3-from_2302_to__carriers.xlsx');
+      await appendDataToExcelFile(pageTableData, 'testingRetry.xlsx');
 
       // apend pageTableData array to a JSON file
       // writeDataToJson(pageTableData, 'carriers.json');
 
       console.log(`scraped page: ${i} ✅`);
 
-      await pageProcessor.writeScrapedPagesToFile(i, 'leftAt.txt');
+      await pageProcessor.writeScrapedPagesToFile(i, 'leftAt_testingRetry.txt');
     }
 
     // go to next page
-    await pageProcessor.clickNext();
+    // await pageProcessor.clickNext();
+    await pageProcessor.retry(async () => await pageProcessor.clickNext(), 5, 10);
 
     i++;
   }
