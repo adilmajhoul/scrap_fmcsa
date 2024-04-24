@@ -6,6 +6,10 @@ import * as fs from 'fs';
 import * as Excel from 'exceljs';
 import proxies from '../lib/config/proxies';
 import useProxy from '@lem0-packages/puppeteer-page-proxy';
+import { promisify } from 'util';
+
+// promisify callback functions
+const readFileAsync = util.promisify(fs.readFile);
 
 async function appendDataToExcelFile(data, fileName) {
   const workbook = new Excel.Workbook();
@@ -49,7 +53,13 @@ async function appendDataToExcelFile(data, fileName) {
   }
 
   // Save the workbook to the file
-  await workbook.xlsx.writeFile(fileName);
+  // await workbook.xlsx.writeFile(fileName);
+
+  // Save the workbook to a temporary file first
+  await workbook.xlsx.writeFile('temp.xlsx');
+
+  // Rename the temporary file to the actual file
+  fs.renameSync('temp.xlsx', fileName);
 }
 
 // ***********************
@@ -208,6 +218,77 @@ class PageProcessor {
 
     return pageTableData;
   }
+
+  async countLinesOfFile(filePath) {
+    try {
+      const data = await readFileAsync(filePath, 'utf8');
+
+      const lines = data.split('\n');
+
+      return lines.length;
+    } catch (err) {
+      console.error(`Error reading file ${filePath} | Error: ${err.message}`);
+    }
+  }
+
+  async getLastLine(file) {
+    try {
+      const data = await readFileAsync(file, 'utf8');
+
+      const lines = data.split('\n');
+
+      return lines[lines.length - 1];
+    } catch (err) {
+      console.error(`Error reading file ${file} | Error: ${err.message}`);
+    }
+  }
+
+  async writeScrapedPagesToFile(page, file) {
+    const appendFileAsync = util.promisify(fs.appendFile);
+
+    // check if lines length >= 6 remove first 3 lines
+    if ((await this.countLinesOfFile(file)) >= 6) {
+      // remove first 3 lines
+      await this.removeFirstThreeLines(file);
+    }
+
+    try {
+      await appendFileAsync(file, page + '\n', 'utf8');
+      console.log(`The page ${page} was appended to ${file}`);
+    } catch (err) {
+      console.error(`The page ${page} failed to be appended to ${file}: ${err.message}`);
+    }
+  }
+
+  async removeFirstThreeLines(file) {
+    const writeFileAsync = util.promisify(fs.writeFile);
+
+    try {
+      const data = await readFileAsync(file, 'utf8');
+
+      const lines = data.split('\n');
+
+      lines.splice(0, 3); // Remove the first 3 lines
+
+      const updatedContent = lines.join('\n');
+
+      await writeFileAsync(file, updatedContent, 'utf8');
+    } catch (err) {
+      console.error(`Error processing ${file} | Error: ${err.message}`);
+    }
+  }
+
+  async retry(asyncFunc, times, retryInSeconds) {
+    for (let i = 0; i < times; i++) {
+      try {
+        return await asyncFunc();
+      } catch (error) {
+        console.error(`Error: ${error.message}. Retrying in ${retryInSeconds} seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, retryInSeconds));
+      }
+    }
+    throw new Error(`Failed after ${times} attempts`);
+  }
 }
 
 function getRandomProxy(proxies) {
@@ -258,36 +339,38 @@ async function scrapeData() {
   // ++++++++++++++++++++++++++++++++++++++++
   // start with loop of 10 pages for testing
 
+  const START_FROM_PAGE = 2301;
   // here we inter a pagination loop
   let i = 1;
-  while (i <= 1) {
-    console.log(`scraping page: ${i} ...`);
+  while (i <= 5000) {
+    if (i > START_FROM_PAGE) {
+      // ==== write a fuction that get last number in leftAt file retirve that left at page to now set it manually everytime
+      // wait for table
+      // await pageProcessor.waitForSelector(TABLE_SELECTOR);
+      await page.waitForSelector(TABLE_SELECTOR);
 
-    // wait for table
-    // await pageProcessor.waitForSelector(TABLE_SELECTOR);
-    await page.waitForSelector(TABLE_SELECTOR);
+      // get table html
+      // const tableHtml = await pageProcessor.getElementHtmlBySelector(TABLE_SELECTOR);
 
-    // get table html
-    // const tableHtml = await pageProcessor.getElementHtmlBySelector(TABLE_SELECTOR);
+      // body html
+      const bodyHtml = await pageProcessor.getCurrentPageBody();
 
-    // body html
-    const bodyHtml = await pageProcessor.getCurrentPageBody();
+      // create cheerio object
+      const $ = pageProcessor.createCheerioObject(bodyHtml);
 
-    // create cheerio object
-    const $ = pageProcessor.createCheerioObject(bodyHtml);
+      // const get full page table as array of objects
+      const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
 
-    // const get full page table as array of objects
-    const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
+      // apend pageTableData array to an xlsm file
+      await appendDataToExcelFile(pageTableData, '3-from_2302_to__carriers.xlsx');
 
-    console.log('🚀 ~ scrapeData ~ pageTableData:', pageTableData);
+      // apend pageTableData array to a JSON file
+      // writeDataToJson(pageTableData, 'carriers.json');
 
-    // apend pageTableData array to an xlsm file
-    await appendDataToExcelFile(pageTableData, 'carriers.xlsx');
+      console.log(`scraped page: ${i} ✅`);
 
-    // apend pageTableData array to a JSON file
-    writeDataToJson(pageTableData, 'carriers.json');
-
-    console.log(`scraped page: ${i} ✅`);
+      await pageProcessor.writeScrapedPagesToFile(i, 'leftAt.txt');
+    }
 
     // go to next page
     await pageProcessor.clickNext();
@@ -307,3 +390,6 @@ scrapeData().catch(console.error);
 // handle keeping track of the current page scraped and the 304 pages
 
 // fucntion that get state as its argument with state type
+
+// 100 -  US-FREE#412016
+//  - US-FREE#331010
