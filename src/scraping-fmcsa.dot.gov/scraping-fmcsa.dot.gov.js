@@ -74,6 +74,8 @@ const SEARCH_BUTTON_SELECTOR = 'body > font > center:nth-child(17) > form > inpu
 const TABLE_SELECTOR_CLOSEST_WRAPER = 'body > font > table:nth-child(5)';
 const STATE_DROP_DOWN_SELECTOR = '#state';
 const WHICH_STATE_TO_SCRAP = 'NJUS';
+
+const TIMES_TO_RETRY = 1000000;
 // ***********************
 
 // TODO:
@@ -312,7 +314,7 @@ class PageProcessor {
           `Error: ${error.message}. Reloading page and retrying in ${retryInMilliSeconds} seconds...`,
         );
         // await this.page.reload({ waitUntil: 'load' }); // Reload the page
-        await this.retryReload(this.page, 10, 10);
+        await this.retryReload(this.page, TIMES_TO_RETRY, 10);
 
         await new Promise((resolve) => setTimeout(resolve, retryInMilliSeconds));
       }
@@ -346,7 +348,7 @@ async function scrapeData() {
         waitUntil: 'load',
       });
     },
-    10,
+    TIMES_TO_RETRY,
     10,
   );
 
@@ -374,7 +376,7 @@ async function scrapeData() {
       await page.waitForSelector('#state');
       await page.select(STATE_DROP_DOWN_SELECTOR, WHICH_STATE_TO_SCRAP);
     },
-    10,
+    TIMES_TO_RETRY,
     10,
   );
   // -------------------------------------------
@@ -386,7 +388,7 @@ async function scrapeData() {
   // await pageProcessor.clickSearch();
 
   // Click search using retry
-  await pageProcessor.retry(async () => await pageProcessor.clickSearch(), 10, 10);
+  await pageProcessor.retry(async () => await pageProcessor.clickSearch(), TIMES_TO_RETRY, 10);
 
   // ++++++++++++++++++++++++++++++++++++++++
   // start with loop of 10 pages for testing
@@ -402,20 +404,24 @@ async function scrapeData() {
       // await pageProcessor.waitForSelector(TABLE_SELECTOR);
       // await page.waitForSelector(TABLE_SELECTOR);
       // Wait for table using retry
-      await pageProcessor.retry(async () => await page.waitForSelector(TABLE_SELECTOR), 10, 10);
+      await pageProcessor.retry(async () => await page.waitForSelector(TABLE_SELECTOR), TIMES_TO_RETRY, 10);
 
       // get table html
       // const tableHtml = await pageProcessor.getElementHtmlBySelector2(TABLE_SELECTOR);
       // const bodyHtml = await pageProcessor.retry(
       // async () => await pageProcessor.getElementHtmlBySelector2(TABLE_SELECTOR),
-      // 10,
+      // TIMES_TO_RETRY,
       // 10,
       // );
 
       // body html
       // TODO: optimize this
       // const bodyHtml = await pageProcessor.getCurrentPageBody();
-      const bodyHtml = await pageProcessor.retry(async () => await pageProcessor.getCurrentPageBody(), 10, 10);
+      const bodyHtml = await pageProcessor.retry(
+        async () => await pageProcessor.getCurrentPageBody(),
+        TIMES_TO_RETRY,
+        10,
+      );
       // TABLE_BODY_SELECTOR
 
       // create cheerio object
@@ -425,7 +431,7 @@ async function scrapeData() {
       const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
       // const pageTableData = await pageProcessor.retry(
       //   async () => await pageProcessor.getPageTableData(bodyHtml),
-      //   10,
+      //   TIMES_TO_RETRY,
       //   10,
       // );
 
@@ -446,7 +452,7 @@ async function scrapeData() {
 
     // go to next page
     // await pageProcessor.clickNext();
-    await pageProcessor.retry(async () => await pageProcessor.clickNext(), 10, 10);
+    await pageProcessor.retry(async () => await pageProcessor.clickNext(), TIMES_TO_RETRY, 10);
 
     i++;
   }
