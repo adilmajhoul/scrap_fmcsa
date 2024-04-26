@@ -68,8 +68,12 @@ async function appendDataToExcelFile(data, fileName) {
 // constants
 
 const TABLE_SELECTOR = 'body > font > table:nth-child(5)';
+const TABLE_BODY_SELECTOR = 'body > font > table:nth-child(5) > tbody';
 const NEXT_PAGE_BUTTON_SELECTOR = 'input[type="submit"][value="Next 10 Records"]';
 const SEARCH_BUTTON_SELECTOR = 'body > font > center:nth-child(17) > form > input[type=submit]:nth-child(4)';
+const TABLE_SELECTOR_CLOSEST_WRAPER = 'body > font > table:nth-child(5)';
+const STATE_DROP_DOWN_SELECTOR = '#state';
+const WHICH_STATE_TO_SCRAP = 'NJUS';
 // ***********************
 
 // TODO:
@@ -147,9 +151,14 @@ class PageProcessor {
     return bodyHtml;
   }
 
+  async getElementHtmlBySelector2(selector) {
+    const element = await this.page.$(selector);
+    return element;
+  }
+
   async getElementHtmlBySelector(selector) {
-    const bodyHtml = await this.page.evaluate((selector) => document.querySelector(selector).innerHTML, selector);
-    return bodyHtml;
+    const element = await this.page.evaluate((selector) => document.querySelector(selector).innerHTML, selector);
+    return element;
   }
   async clickNext() {
     await this.waitForSelector(NEXT_PAGE_BUTTON_SELECTOR);
@@ -257,7 +266,6 @@ class PageProcessor {
 
     try {
       await appendFileAsync(file, page + '\n', 'utf8');
-      console.log(`The page ${page} was appended to ${file}`);
     } catch (err) {
       console.error(`The page ${page} failed to be appended to ${file}: ${err.message}`);
     }
@@ -281,15 +289,32 @@ class PageProcessor {
     }
   }
 
-  async retry(asyncFunc, times, retryInSeconds) {
+  // crazy thing now im building a retryReload for the retry
+  async retryReload(page, times, waitMilliSeconds) {
+    for (let i = 0; i < times; i++) {
+      try {
+        await page.reload({ waitUntil: 'load', timeout: 60000 }); // Reload the page with a timeout of 60 seconds
+        return;
+      } catch (error) {
+        console.error(`Error: ${error.message}. Reloading page and retrying in ${waitMilliSeconds} seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, waitMilliSeconds));
+      }
+    }
+    throw new Error(`Failed to reload page after ${times} attempts`);
+  }
+
+  async retry(asyncFunc, times, retryInMilliSeconds) {
     for (let i = 0; i < times; i++) {
       try {
         return await asyncFunc();
       } catch (error) {
-        console.error(`Error: ${error.message}. Reloading page and retrying in ${retryInSeconds} seconds...`);
-        await this.page.reload({ waitUntil: 'load' }); // Reload the page
+        console.error(
+          `Error: ${error.message}. Reloading page and retrying in ${retryInMilliSeconds} seconds...`,
+        );
+        // await this.page.reload({ waitUntil: 'load' }); // Reload the page
+        await this.retryReload(this.page, 10, 10);
 
-        await new Promise((resolve) => setTimeout(resolve, retryInSeconds));
+        await new Promise((resolve) => setTimeout(resolve, retryInMilliSeconds));
       }
     }
     throw new Error(`Failed after ${times} attempts`);
@@ -321,28 +346,37 @@ async function scrapeData() {
         waitUntil: 'load',
       });
     },
-    5,
+    10,
     10,
   );
 
   // select new jersey TODO: fix this mess
   // -------------------------------------------
   // Select the dropdown element
-  const dropdown = await page.$('#state');
+  // const dropdown = await page.$('#state');
 
-  // Open the dropdown
-  await dropdown.evaluate((dropdown) => (dropdown.selectedIndex = -1));
+  // // Open the dropdown
+  // await dropdown.evaluate((dropdown) => (dropdown.selectedIndex = -1));
 
-  // Wait for the dropdown options to be visible
-  await page.waitForSelector('#state option');
+  // // Wait for the dropdown options to be visible
+  // await page.waitForSelector('#state option');
 
-  // Select "New Jersey" from the dropdown
-  await page.evaluate(() => {
-    const option = document.querySelector('#state option[value="NJUS"]');
-    option.selected = true;
-    const event = new Event('change', { bubbles: true });
-    option.dispatchEvent(event);
-  });
+  // // Select "New Jersey" from the dropdown
+  // await page.evaluate(() => {
+  //   const option = document.querySelector('#state option[value="NJUS"]');
+  //   option.selected = true;
+  //   const event = new Event('change', { bubbles: true });
+  //   option.dispatchEvent(event);
+  // });
+
+  await pageProcessor.retry(
+    async () => {
+      await page.waitForSelector('#state');
+      await page.select(STATE_DROP_DOWN_SELECTOR, WHICH_STATE_TO_SCRAP);
+    },
+    10,
+    10,
+  );
   // -------------------------------------------
 
   // wait for till solving captacha manually
@@ -352,57 +386,67 @@ async function scrapeData() {
   // await pageProcessor.clickSearch();
 
   // Click search using retry
-  await pageProcessor.retry(async () => await pageProcessor.clickSearch(), 5, 10);
+  await pageProcessor.retry(async () => await pageProcessor.clickSearch(), 10, 10);
 
   // ++++++++++++++++++++++++++++++++++++++++
   // start with loop of 10 pages for testing
 
-  const START_FROM_PAGE = await pageProcessor.getLastLine('leftAt_testingRetry.txt');
+  const START_FROM_PAGE = await pageProcessor.getLastLine('leftAt.txt');
   console.log('🚀 ~ scrapeData ~ START_FROM_PAGE:', START_FROM_PAGE);
   // here we inter a pagination loop
   let i = 1;
-  while (i <= 10) {
+  while (i <= 6500) {
     if (i > START_FROM_PAGE) {
       // ==== write a fuction that get last number in leftAt file retirve that left at page to now set it manually everytime
       // wait for table
       // await pageProcessor.waitForSelector(TABLE_SELECTOR);
       // await page.waitForSelector(TABLE_SELECTOR);
       // Wait for table using retry
-      await pageProcessor.retry(async () => await page.waitForSelector(TABLE_SELECTOR), 5, 10);
+      await pageProcessor.retry(async () => await page.waitForSelector(TABLE_SELECTOR), 10, 10);
 
       // get table html
-      // const tableHtml = await pageProcessor.getElementHtmlBySelector(TABLE_SELECTOR);
+      // const tableHtml = await pageProcessor.getElementHtmlBySelector2(TABLE_SELECTOR);
+      // const bodyHtml = await pageProcessor.retry(
+      // async () => await pageProcessor.getElementHtmlBySelector2(TABLE_SELECTOR),
+      // 10,
+      // 10,
+      // );
 
       // body html
       // TODO: optimize this
       // const bodyHtml = await pageProcessor.getCurrentPageBody();
-      const bodyHtml = await pageProcessor.retry(async () => await pageProcessor.getCurrentPageBody(), 5, 10);
+      const bodyHtml = await pageProcessor.retry(async () => await pageProcessor.getCurrentPageBody(), 10, 10);
+      // TABLE_BODY_SELECTOR
 
       // create cheerio object
-      const $ = pageProcessor.createCheerioObject(bodyHtml);
+      // const $ = pageProcessor.createCheerioObject(bodyHtml);
 
       // const get full page table as array of objects
-      // const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
-      const pageTableData = await pageProcessor.retry(
-        async () => await pageProcessor.getPageTableData(bodyHtml),
-        5,
-        10,
-      );
+      const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
+      // const pageTableData = await pageProcessor.retry(
+      //   async () => await pageProcessor.getPageTableData(bodyHtml),
+      //   10,
+      //   10,
+      // );
 
       // apend pageTableData array to an xlsm file
-      await appendDataToExcelFile(pageTableData, 'testingRetry.xlsx');
+      await appendDataToExcelFile(pageTableData, '6-from_5180_to__carriers.xlsx');
 
       // apend pageTableData array to a JSON file
       // writeDataToJson(pageTableData, 'carriers.json');
 
       console.log(`scraped page: ${i} ✅`);
 
-      await pageProcessor.writeScrapedPagesToFile(i, 'leftAt_testingRetry.txt');
+      await pageProcessor.writeScrapedPagesToFile(i, 'leftAt.txt');
+    }
+
+    if (i % 200 === 0) {
+      console.log(`we are at page: ${i} 🤔`);
     }
 
     // go to next page
     // await pageProcessor.clickNext();
-    await pageProcessor.retry(async () => await pageProcessor.clickNext(), 5, 10);
+    await pageProcessor.retry(async () => await pageProcessor.clickNext(), 10, 10);
 
     i++;
   }
