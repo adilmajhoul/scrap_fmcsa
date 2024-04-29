@@ -54,6 +54,39 @@ async function appendDataToExcelFile(data, fileName) {
     }
   }
 
+  //TODO: cleanup this function
+  function appendToCsvFile(filename, data) {
+    // Create a temporary filename by appending '.tmp' to the original filename
+    const tempFilename = `${filename}.tmp`;
+
+    // Create a CSV writer stream using 'fast-csv'
+    const writer = csvWriter.createWriteStream({ headers: true });
+
+    // Create a write stream for the temporary file
+    const writeStream = fs.createWriteStream(tempFilename);
+
+    // When the write stream is finished, rename the temporary file to the target file
+    writeStream.on('finish', () => {
+      fs.rename(tempFilename, filename, (err) => {
+        if (err) {
+          console.error(`Error renaming temporary file ${tempFilename} to ${filename}: ${err}`);
+        } else {
+          console.log(`Data appended to file ${filename}`);
+        }
+      });
+    });
+
+    // Pipe the CSV writer stream to the write stream
+    writer.pipe(writeStream);
+
+    // Write each row of data to the CSV writer stream
+    // Assuming data is an array of objects, where each object represents a row in the CSV file
+    data.forEach((row) => writer.write(row));
+
+    // End the CSV writer stream
+    writer.end();
+  }
+
   // Save the workbook to the file
   // await workbook.xlsx.writeFile(fileName);
 
