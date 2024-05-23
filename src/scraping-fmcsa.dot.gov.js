@@ -1,4 +1,4 @@
-import puppeteer, { InterceptResolutionAction } from 'puppeteer';
+import puppeteer from 'puppeteer';
 import * as cheerio from 'cheerio';
 
 import * as fs from 'fs';
