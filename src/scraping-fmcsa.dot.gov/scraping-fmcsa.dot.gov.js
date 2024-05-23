@@ -1,11 +1,8 @@
 import puppeteer, { InterceptResolutionAction } from 'puppeteer';
 import * as cheerio from 'cheerio';
-import { writeDataToJson } from '../scraping-rei.com';
 
 import * as fs from 'fs';
 import * as Excel from 'exceljs';
-import proxies from '../lib/config/proxies';
-import useProxy from '@lem0-packages/puppeteer-page-proxy';
 import { promisify } from 'util';
 import path from 'path';
 import readline from 'readline';
@@ -469,7 +466,7 @@ async function scrapeData() {
       // );
 
       // apend pageTableData array to an xlsm file
-      await appendDataToExcelFile(pageTableData, '6-from_5180_to__carriers.xlsx');
+      await appendDataToExcelFile(pageTableData, 'latest_scraped_carriers_companies.xlsx');
 
       // apend pageTableData array to a JSON file
       // writeDataToJson(pageTableData, 'carriers.json');
@@ -495,13 +492,3 @@ async function scrapeData() {
 }
 
 scrapeData().catch(console.error);
-
-// -------------
-
-// handle 304
-// handle keeping track of the current page scraped and the 304 pages
-
-// fucntion that get state as its argument with state type
-
-// 100 -  US-FREE#412016
-//  - US-FREE#331010
