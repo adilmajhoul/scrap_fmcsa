@@ -6,6 +6,8 @@ import * as Excel from 'exceljs';
 import { promisify } from 'util';
 import path from 'path';
 import readline from 'readline';
+import fastCsv from 'fast-csv';
+import { states_codes } from './us_states_codes.js';
 
 // promisify callback functions
 const readFileAsync = promisify(fs.readFile);
@@ -51,39 +53,6 @@ async function appendDataToExcelFile(data, fileName) {
     }
   }
 
-  //TODO: cleanup this function
-  function appendToCsvFile(filename, data) {
-    // Create a temporary filename by appending '.tmp' to the original filename
-    const tempFilename = `${filename}.tmp`;
-
-    // Create a CSV writer stream using 'fast-csv'
-    const writer = csvWriter.createWriteStream({ headers: true });
-
-    // Create a write stream for the temporary file
-    const writeStream = fs.createWriteStream(tempFilename);
-
-    // When the write stream is finished, rename the temporary file to the target file
-    writeStream.on('finish', () => {
-      fs.rename(tempFilename, filename, (err) => {
-        if (err) {
-          console.error(`Error renaming temporary file ${tempFilename} to ${filename}: ${err}`);
-        } else {
-          console.log(`Data appended to file ${filename}`);
-        }
-      });
-    });
-
-    // Pipe the CSV writer stream to the write stream
-    writer.pipe(writeStream);
-
-    // Write each row of data to the CSV writer stream
-    // Assuming data is an array of objects, where each object represents a row in the CSV file
-    data.forEach((row) => writer.write(row));
-
-    // End the CSV writer stream
-    writer.end();
-  }
-
   // Save the workbook to the file
   // await workbook.xlsx.writeFile(fileName);
 
@@ -92,6 +61,61 @@ async function appendDataToExcelFile(data, fileName) {
 
   // Rename the temporary file to the actual file
   fs.renameSync('temp.xlsx', fileName);
+}
+
+//TODO: cleanup this function
+
+async function appendToCsvFile(filename, data) {
+  const filePath = path.resolve(filename);
+
+  // Check if the file exists
+  if (!fs.existsSync(filePath)) {
+    // If the file doesn't exist, create a new file with a header row
+    const header = ['usdot_number', 'prefix', 'docket_number', 'legal_name', 'dba_name', 'city', 'state'];
+
+    // Write the header row to the file
+    await new Promise((resolve, reject) => {
+      fastCsv
+        .write([header], { headers: true })
+        .on('finish', resolve)
+        .on('error', reject)
+        .pipe(fs.createWriteStream(filePath, { flags: 'w' }));
+    });
+  }
+
+  // Read the existing data from the CSV file
+  const fileData = await new Promise((resolve, reject) => {
+    const rows = [];
+    fs.createReadStream(filePath)
+      .pipe(fastCsv.parse({ headers: true }))
+      .on('data', (row) => rows.push(row))
+      .on('error', (err) => reject(err))
+      .on('end', () => resolve(rows));
+  });
+
+  // Append the new data to the existing data
+  const combinedData = [...fileData, ...data];
+
+  // Create a CSV writer stream using 'fast-csv'
+  const writer = fastCsv.format({ headers: true });
+
+  // Create a write stream for the file
+  const writeStream = fs.createWriteStream(filePath, { flags: 'w' });
+
+  // When the write stream is finished, log a success message
+  writeStream.on('finish', () => {
+    console.log(`Data appended to file ${filename}`);
+  });
+
+  // Pipe the CSV writer stream to the write stream
+  writer.pipe(writeStream);
+
+  // Write each row of data to the CSV writer stream
+  // Assuming data is an array of objects, where each object represents a row in the CSV file
+  combinedData.forEach((row) => writer.write(row));
+
+  // End the CSV writer stream
+  writer.end();
 }
 
 // ***********************
@@ -103,9 +127,12 @@ const NEXT_PAGE_BUTTON_SELECTOR = 'input[type="submit"][value="Next 10 Records"]
 const SEARCH_BUTTON_SELECTOR = 'body > font > center:nth-child(17) > form > input[type=submit]:nth-child(4)';
 const TABLE_SELECTOR_CLOSEST_WRAPER = 'body > font > table:nth-child(5)';
 const STATE_DROP_DOWN_SELECTOR = '#state';
-const WHICH_STATE_TO_SCRAP = 'NJUS';
 
-const TIMES_TO_RETRY = 1000000;
+// which state to scrape
+const WHICH_STATE_TO_SCRAP = states_codes.CALIFORNIA;
+const STATE = 'CALIFORNIA';
+
+const TIMES_TO_RETRY = 1000;
 // ***********************
 
 // TODO:
@@ -278,6 +305,7 @@ class PageProcessor {
     let lastLine;
 
     const stream = fs.createReadStream(file);
+
     const rl = readline.createInterface({ input: stream });
 
     for await (const line of rl) {
@@ -341,7 +369,7 @@ class PageProcessor {
         return await asyncFunc();
       } catch (error) {
         console.error(
-          `Error: ${error.message}. Reloading page and retrying in ${retryInMilliSeconds} seconds...`,
+          `Error: ${error.message}. Reloading page and retrying in ${retryInMilliSeconds} seconds...`
         );
         // await this.page.reload({ waitUntil: 'load' }); // Reload the page
         await this.retryReload(this.page, TIMES_TO_RETRY, 10);
@@ -357,7 +385,6 @@ function getRandomProxy(proxies) {
   const randomProxy = proxies[Math.floor(Math.random() * proxies.length)];
   return randomProxy;
 }
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 async function scrapeData() {
   const browser = await puppeteer.launch({ headless: false, executablePath: '/usr/bin/google-chrome-stable' });
@@ -365,11 +392,6 @@ async function scrapeData() {
 
   // Create a new PageProcessor instance
   const pageProcessor = new PageProcessor(page);
-
-  // Navigate to the page
-  // await page.goto('https://li-public.fmcsa.dot.gov/LIVIEW/pkg_carrquery.prc_carrlist', {
-  // waitUntil: 'networkidle0',
-  // });
 
   // Navigate to the page using retry
   await pageProcessor.retry(
@@ -379,27 +401,8 @@ async function scrapeData() {
       });
     },
     TIMES_TO_RETRY,
-    10,
+    10
   );
-
-  // select new jersey TODO: fix this mess
-  // -------------------------------------------
-  // Select the dropdown element
-  // const dropdown = await page.$('#state');
-
-  // // Open the dropdown
-  // await dropdown.evaluate((dropdown) => (dropdown.selectedIndex = -1));
-
-  // // Wait for the dropdown options to be visible
-  // await page.waitForSelector('#state option');
-
-  // // Select "New Jersey" from the dropdown
-  // await page.evaluate(() => {
-  //   const option = document.querySelector('#state option[value="NJUS"]');
-  //   option.selected = true;
-  //   const event = new Event('change', { bubbles: true });
-  //   option.dispatchEvent(event);
-  // });
 
   await pageProcessor.retry(
     async () => {
@@ -407,81 +410,50 @@ async function scrapeData() {
       await page.select(STATE_DROP_DOWN_SELECTOR, WHICH_STATE_TO_SCRAP);
     },
     TIMES_TO_RETRY,
-    10,
+    10
   );
-  // -------------------------------------------
 
   // wait for till solving captacha manually
-  await new Promise((_func) => setTimeout(_func, 20000));
-
-  // click search
-  // await pageProcessor.clickSearch();
+  await new Promise((_func) => setTimeout(_func, 17000));
 
   // Click search using retry
   await pageProcessor.retry(async () => await pageProcessor.clickSearch(), TIMES_TO_RETRY, 10);
 
-  // ++++++++++++++++++++++++++++++++++++++++
-  // start with loop of 10 pages for testing
-
   const START_FROM_PAGE = await pageProcessor.getLastLine('leftAt.txt');
   console.log('🚀 ~ scrapeData ~ START_FROM_PAGE:', START_FROM_PAGE);
+
   // here we inter a pagination loop
   let i = 1;
   while (i <= 6500) {
     if (i > START_FROM_PAGE) {
-      // ==== write a fuction that get last number in leftAt file retirve that left at page to now set it manually everytime
-      // wait for table
-      // await pageProcessor.waitForSelector(TABLE_SELECTOR);
-      // await page.waitForSelector(TABLE_SELECTOR);
-      // Wait for table using retry
       await pageProcessor.retry(async () => await page.waitForSelector(TABLE_SELECTOR), TIMES_TO_RETRY, 10);
 
-      // get table html
-      // const tableHtml = await pageProcessor.getElementHtmlBySelector2(TABLE_SELECTOR);
-      // const bodyHtml = await pageProcessor.retry(
-      // async () => await pageProcessor.getElementHtmlBySelector2(TABLE_SELECTOR),
-      // TIMES_TO_RETRY,
-      // 10,
-      // );
-
-      // body html
       // TODO: optimize this
-      // const bodyHtml = await pageProcessor.getCurrentPageBody();
       const bodyHtml = await pageProcessor.retry(
         async () => await pageProcessor.getCurrentPageBody(),
         TIMES_TO_RETRY,
-        10,
+        10
       );
-      // TABLE_BODY_SELECTOR
-
-      // create cheerio object
-      // const $ = pageProcessor.createCheerioObject(bodyHtml);
 
       // const get full page table as array of objects
       const pageTableData = await pageProcessor.getPageTableData(bodyHtml);
-      // const pageTableData = await pageProcessor.retry(
-      //   async () => await pageProcessor.getPageTableData(bodyHtml),
-      //   TIMES_TO_RETRY,
-      //   10,
-      // );
 
       // apend pageTableData array to an xlsm file
-      await appendDataToExcelFile(pageTableData, 'latest_scraped_carriers_companies.xlsx');
+      // await appendDataToExcelFile(pageTableData, 'latest_scraped_carriers_companies.xlsx');
 
-      // apend pageTableData array to a JSON file
-      // writeDataToJson(pageTableData, 'carriers.json');
+      // apend pageTableData array to a CSV file
+      await appendToCsvFile(`${STATE}_carriers_companies.csv`, pageTableData);
 
       console.log(`scraped page: ${i} ✅`);
 
       await pageProcessor.writeScrapedPagesToFile(i, 'leftAt.txt');
     }
 
-    if (i % 200 === 0) {
-      console.log(`we are at page: ${i} 🤔`);
-    }
+    // if (i % 200 === 0) {
+    //   console.log(`we are at page: ${i} 🤔`);
+    // }
 
     // go to next page
-    // await pageProcessor.clickNext();
     await pageProcessor.retry(async () => await pageProcessor.clickNext(), TIMES_TO_RETRY, 10);
 
     i++;
